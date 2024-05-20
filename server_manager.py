@@ -3,18 +3,15 @@ import threading
 import logging
 import os
 import shutil
-import signal
+import argparse
+import json
 from time import sleep
 
-JAR_PATH = "C:\\Users\\colli\\fakeServer\\server.jar"
-LOG_PATH = "C:\\Users\\colli\\serverService\\server_manager.log"
-SERVER_PATH = "C:\\Users\\colli\\fakeServer"
-BACKUP_DIR = "C:\\Users\\colli\\backupFakeServer"
 SAVE_INTERVAL_SEC = 600 # 10 minutes
 BACKUP_INTERVAL_SEC = 60 * 60 * 24 # 1 day
 STOP_THREADS_FLAG = threading.Event()
 
-def start_server_jar(jar_path: str) -> subprocess.Popen:
+def start_server_jar(jar_path: str, server_path: str) -> subprocess.Popen:
     """
     Function that initially kicks off server, and returns the subprocess obj
     """
@@ -24,7 +21,7 @@ def start_server_jar(jar_path: str) -> subprocess.Popen:
                                       stdout=subprocess.PIPE,
                                       stderr=subprocess.PIPE,
                                       universal_newlines=True,
-                                      cwd=SERVER_PATH)
+                                      cwd=server_path)
     return server_process
 
 def send_server_command(server_process: subprocess.Popen, command: str):
@@ -99,7 +96,7 @@ def copy_files(src_dir: str, dest_dir: str):
     
     logging.debug("All files copied successfully.")
 
-def periodic_backup(interval_sec: int, backup_dir: str) -> None:
+def periodic_backup(interval_sec: int, backup_dir: str, server_path: str) -> None:
     """
     Wrapper func for a periodic backup of all files to a specified directory
     Do not fail and kill process if we cannot backup files - just create a strong critical
@@ -108,7 +105,7 @@ def periodic_backup(interval_sec: int, backup_dir: str) -> None:
     while True and not STOP_THREADS_FLAG.is_set():
         try:
             logging.info(f"Backing up server files to {backup_dir}")
-            copy_files(src_dir=SERVER_PATH, dest_dir=backup_dir)
+            copy_files(src_dir=server_path, dest_dir=backup_dir)
         except Exception as exc:
             logging.critical(f"Could not backup files to {backup_dir}: {exc}")
         
@@ -124,18 +121,35 @@ def main():
     """
     Main func to create and handle the server jar process
     """
+    # take in argument for config file
+    parser = argparse.ArgumentParser(
+        prog="MC Server manager wrapper",
+        description="Full time multithreaded manager for mc server jar",
+    )
+    parser.add_argument("-c", "--config", help="The configuration file", required=True)
+    args = parser.parse_args()
+    config_name = args.config
+
+    # load the config file values
+    with open(config_name, 'r') as config_file:
+        config = json.load(config_file)
+    jar_path = config['JarPath']
+    log_path = config['LogPath']
+    server_path = config['ServerPath']
+    backup_path = config['BackupPath']
+
     # initialize the log
-    logging.basicConfig(filename=LOG_PATH, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(filename=log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # Initialize the server
-    server_process = start_server_jar(JAR_PATH)
+    server_process = start_server_jar(jar_path, server_path)
 
     # Create threads to manage the server saves and backups
     try:
         save_task = threading.Thread(target=periodic_save, args=(server_process, SAVE_INTERVAL_SEC,))
         save_task.start()
 
-        backup_task = threading.Thread(target=periodic_backup, args=(BACKUP_INTERVAL_SEC, BACKUP_DIR,))
+        backup_task = threading.Thread(target=periodic_backup, args=(BACKUP_INTERVAL_SEC, backup_path, server_path))
         backup_task.start()
 
         server_process.wait()
