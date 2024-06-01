@@ -7,8 +7,6 @@ import argparse
 import json
 from time import sleep
 
-SAVE_INTERVAL_SEC = 600 # 10 minutes
-BACKUP_INTERVAL_SEC = 60 * 60 * 24 # 1 day
 STOP_THREADS_FLAG = threading.Event()
 
 def start_server_jar(jar_path: str, server_path: str) -> subprocess.Popen:
@@ -68,7 +66,6 @@ def copy_files(src_dir: str, dest_dir: str):
         raise exc
 
     try:
-        # shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
         # Copy all files and directories recursively from src_dir to dest_dir
         for root, dirs, files in os.walk(src_dir):
             for dir in dirs:
@@ -102,6 +99,8 @@ def periodic_backup(interval_sec: int, backup_dir: str, server_path: str) -> Non
     Do not fail and kill process if we cannot backup files - just create a strong critical
     entry
     """
+    # TODO: Add a naming scheme to backups so multiple copies of backups can be held
+    # TODO: Zip the backups for space efficiency
     while True and not STOP_THREADS_FLAG.is_set():
         try:
             logging.info(f"Backing up server files to {backup_dir}")
@@ -137,6 +136,8 @@ def main():
     log_path = config['LogPath']
     server_path = config['ServerPath']
     backup_path = config['BackupPath']
+    save_interval_sec = config['SaveIntervalSec']
+    backup_interval_sec = config['BackupIntervalSec']
 
     # initialize the log
     logging.basicConfig(filename=log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -146,10 +147,10 @@ def main():
 
     # Create threads to manage the server saves and backups
     try:
-        save_task = threading.Thread(target=periodic_save, args=(server_process, SAVE_INTERVAL_SEC,))
+        save_task = threading.Thread(target=periodic_save, args=(server_process, save_interval_sec,))
         save_task.start()
 
-        backup_task = threading.Thread(target=periodic_backup, args=(BACKUP_INTERVAL_SEC, backup_path, server_path))
+        backup_task = threading.Thread(target=periodic_backup, args=(backup_interval_sec, backup_path, server_path))
         backup_task.start()
 
         server_process.wait()
