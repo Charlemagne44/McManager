@@ -1,6 +1,7 @@
 {
     "JarPath": "",
     "LogPath": "",
+    "UpdateLogPath": "",
     "ServerPath": "",
     "BackupPath": ""
 }
