@@ -78,12 +78,11 @@ def copy_files(src_dir: str, dest_dir: str):
             for file in files:
                 # skip server filelocks - this will fail and halt the copy
                 if ".lock" in file:
-                    pass
+                    continue
                 src_file = os.path.join(root, file)
                 dest_file = os.path.join(dest_dir, os.path.relpath(src_file, src_dir))
                 try:
                     shutil.copy2(src_file, dest_file)
-                    # logging.info(f"File '{src_file}' copied to '{dest_file}' successfully.")
                 except Exception as e:
                     logging.error(f"Failed to copy '{src_file}' to '{dest_file}': {e}")
 
