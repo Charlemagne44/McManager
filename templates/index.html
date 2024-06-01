@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Terminal Layout</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            font-family: monospace;
+            background-color: black;
+            color: lime;
+        }
+
+        #log {
+            flex: 1;
+            padding: 10px;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+        }
+
+        #command-input {
+            display: flex;
+            background: #222;
+        }
+
+        #command {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: #222;
+            color: lime;
+            font-family: monospace;
+        }
+
+        #send-btn {
+            padding: 10px;
+            border: none;
+            background: #444;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="log"></div>
+    <div id="command-input">
+        <input type="text" id="command" placeholder="Enter command...">
+        <button id="send-btn">Send</button>
+    </div>
+    <script>
+        function fetchLog() {
+            fetch('/get_log')
+                .then(response => response.json())
+                .then(data => {
+                    const logElement = document.getElementById('log');
+                    logElement.innerText = data.join('');
+                    logElement.scrollTop = logElement.scrollHeight;
+                });
+        }
+
+        function sendCommand() {
+            const command = document.getElementById('command').value;
+            fetch('/send_command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `command=${command}`
+            }).then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    document.getElementById('command').value = '';
+                });
+        }
+
+        document.getElementById('send-btn').addEventListener('click', sendCommand);
+
+        document.getElementById('command').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendCommand();
+            }
+        });
+
+        setInterval(fetchLog, 2000);  // Fetch log every 2 seconds
+        fetchLog();
+    </script>
+</body>
+
+</html>

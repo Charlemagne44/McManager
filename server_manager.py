@@ -6,8 +6,31 @@ import shutil
 import argparse
 import json
 from time import sleep
+from flask import Flask, render_template, request, jsonify
 
 STOP_THREADS_FLAG = threading.Event()
+server_config = None
+server_process = None
+app = Flask(__name__)
+
+class ServerManagerConfig:
+    """
+    Object for the server config to load configured values into
+    """
+    def __init__(self, configFilePath: str):
+        """
+        Load in the values from the config file to fields in the object
+        """
+        with open(configFilePath, 'r') as config_file:
+            config = json.load(config_file)
+        self.jar_path = config['JarPath']
+        self.manager_log_path = config['ManagerLogPath']
+        self.update_log_path = config['UpdateLogPath']
+        self.server_log_path = config['ServerLogPath']
+        self.server_path = config['ServerPath']
+        self.backup_path = config['BackupPath']
+        self.save_interval_sec = config['SaveIntervalSec']
+        self.backup_interval_sec = config['BackupIntervalSec']
 
 def start_server_jar(jar_path: str, server_path: str) -> subprocess.Popen:
     """
@@ -22,7 +45,7 @@ def start_server_jar(jar_path: str, server_path: str) -> subprocess.Popen:
                                       cwd=server_path)
     return server_process
 
-def send_server_command(server_process: subprocess.Popen, command: str):
+def send_server_command(command: str):
     """
     Wrapper function for sending commands to the server jar
     """
@@ -30,7 +53,7 @@ def send_server_command(server_process: subprocess.Popen, command: str):
     server_process.stdin.write(command + '\r')
     server_process.stdin.flush()
 
-def periodic_save(server_process: subprocess.Popen, interval_sec: int) -> None:
+def periodic_save(interval_sec: int) -> None:
     # modular sleeps into seconds to check for the stop threads flag
     logging.debug("Running initial wait on periodic save thread")
     for _ in range(interval_sec):
@@ -41,7 +64,7 @@ def periodic_save(server_process: subprocess.Popen, interval_sec: int) -> None:
     while True and not STOP_THREADS_FLAG.is_set():
         # Send the save command to the server process
         logging.info('saving the server...')
-        send_server_command(server_process, "save-all")
+        send_server_command("save-all")
         
         logging.debug("Running periodic wait on save thread")
         for _ in range(interval_sec):
@@ -115,12 +138,32 @@ def periodic_backup(interval_sec: int, backup_dir: str, server_path: str) -> Non
             else:
                 break
 
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/get_log')
+def get_log():
+    log_file_path = server_config.server_log_path
+    with open(log_file_path, "r") as log_file:
+        log_lines = log_file.readlines()
+    return jsonify(log_lines[-20:])  # Return the last 20 lines of the log
+
+@app.route('/send_command', methods=['POST'])
+def send_command():    
+    command = request.form['command']
+    logging.info(f"Received and executing command: {command}")
+    send_server_command(command)
+    return jsonify(status="success", command=command)
+
 def main():
     """
     Main func to create and handle the server jar process
     """
     # TODO: add the web server interface so users can still interact with the server and send
     # administrative commands - perhaps also see the live logs up there too?
+
+    # TODO: add checks for the thread kill flag to the flask app
 
     # take in argument for config file
     parser = argparse.ArgumentParser(
@@ -131,29 +174,27 @@ def main():
     args = parser.parse_args()
     config_name = args.config
 
-    # load the config file values
-    with open(config_name, 'r') as config_file:
-        config = json.load(config_file)
-    jar_path = config['JarPath']
-    log_path = config['LogPath']
-    server_path = config['ServerPath']
-    backup_path = config['BackupPath']
-    save_interval_sec = config['SaveIntervalSec']
-    backup_interval_sec = config['BackupIntervalSec']
+    # load the config file values with the config class - will be used by flask application
+    global server_config
+    server_config = ServerManagerConfig(config_name)
 
     # initialize the log
-    logging.basicConfig(filename=log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(filename=server_config.manager_log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # Initialize the server
-    server_process = start_server_jar(jar_path, server_path)
+    global server_process
+    server_process = start_server_jar(server_config.jar_path, server_config.server_path)
 
     # Create threads to manage the server saves and backups
     try:
-        save_task = threading.Thread(target=periodic_save, args=(server_process, save_interval_sec,))
+        save_task = threading.Thread(target=periodic_save, args=(server_config.save_interval_sec,))
         save_task.start()
 
-        backup_task = threading.Thread(target=periodic_backup, args=(backup_interval_sec, backup_path, server_path))
+        backup_task = threading.Thread(target=periodic_backup, args=(server_config.backup_interval_sec, server_config.backup_path, server_config.server_path))
         backup_task.start()
+
+        flask_task = threading.Thread(target=app.run())
+        flask_task.start()
 
         server_process.wait()
     except KeyboardInterrupt:

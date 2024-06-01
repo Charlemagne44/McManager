@@ -1,9 +1,10 @@
 {
-    "JarPath": "",
-    "LogPath": "",
-    "UpdateLogPath": "",
-    "ServerPath": "",
-    "BackupPath": "",
-    "SaveIntervalSec": "",
-    "BackupIntervalSec": ""
+    "JarPath": "C:\\Users\\colli\\fakeServer\\server.jar",
+    "ManagerLogPath": "C:\\Users\\colli\\serverService\\server_manager.log",
+    "UpdateLogPath": "C:\\Users\\colli\\serverService\\update.log",
+    "ServerLogPath": "C:\\Users\\colli\\fakeServer\\logs\\latest.log",
+    "ServerPath": "C:\\Users\\colli\\fakeServer",
+    "BackupPath": "C:\\Users\\colli\\backupFakeServer",
+    "SaveIntervalSec": 60,
+    "BackupIntervalSec": 70
 }
