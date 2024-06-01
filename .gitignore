@@ -166,3 +166,4 @@ libraries/*
 Scripts/*
 
 config.backup.json
+serverManagerVenv/*
