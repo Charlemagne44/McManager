@@ -119,6 +119,9 @@ def main():
     """
     Main func to create and handle the server jar process
     """
+    # TODO: add the web server interface so users can still interact with the server and send
+    # administrative commands - perhaps also see the live logs up there too?
+
     # take in argument for config file
     parser = argparse.ArgumentParser(
         prog="MC Server manager wrapper",
