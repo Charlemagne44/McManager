@@ -164,3 +164,5 @@ Include/*
 Lib/*
 libraries/*
 Scripts/*
+
+config.backup.json
