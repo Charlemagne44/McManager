@@ -3,5 +3,7 @@
     "LogPath": "",
     "UpdateLogPath": "",
     "ServerPath": "",
-    "BackupPath": ""
+    "BackupPath": "",
+    "SaveIntervalSec": "",
+    "BackupIntervalSec": ""
 }
