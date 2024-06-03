@@ -4,14 +4,14 @@ import logging
 import os
 import shutil
 import argparse
-import json
+import json 
 from time import sleep
 from flask import Flask, render_template, request, jsonify
 
 STOP_THREADS_FLAG = threading.Event()
-server_config = None
-server_process = None
 app = Flask(__name__)
+logger_name = "ServerManagerLogger"
+flask_log = "werkzeug"
 
 class ServerManagerConfig:
     """
@@ -25,6 +25,7 @@ class ServerManagerConfig:
             config = json.load(config_file)
         self.jar_path = config['JarPath']
         self.manager_log_path = config['ManagerLogPath']
+        self.web_log_path = config['WebLogPath']
         self.update_log_path = config['UpdateLogPath']
         self.server_log_path = config['ServerLogPath']
         self.server_path = config['ServerPath']
@@ -36,7 +37,7 @@ def start_server_jar(jar_path: str, server_path: str) -> subprocess.Popen:
     """
     Function that initially kicks off server, and returns the subprocess obj
     """
-    logging.info('starting server jar...')
+    manager_logger.info('starting server jar...')
     server_process = subprocess.Popen(['java', '-jar', jar_path, '--nogui'],
                                       stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE,
@@ -49,13 +50,13 @@ def send_server_command(command: str):
     """
     Wrapper function for sending commands to the server jar
     """
-    logging.debug(f'sending command: {command}')
+    manager_logger.debug(f'sending command: {command}')
     server_process.stdin.write(command + '\r')
     server_process.stdin.flush()
 
 def periodic_save(interval_sec: int) -> None:
     # modular sleeps into seconds to check for the stop threads flag
-    logging.debug("Running initial wait on periodic save thread")
+    manager_logger.debug("Running initial wait on periodic save thread")
     for _ in range(interval_sec):
         if not STOP_THREADS_FLAG.is_set():
             sleep(1)
@@ -63,10 +64,10 @@ def periodic_save(interval_sec: int) -> None:
             break
     while True and not STOP_THREADS_FLAG.is_set():
         # Send the save command to the server process
-        logging.info('saving the server...')
+        manager_logger.info('saving the server...')
         send_server_command("save-all")
         
-        logging.debug("Running periodic wait on save thread")
+        manager_logger.debug("Running periodic wait on save thread")
         for _ in range(interval_sec):
             if not STOP_THREADS_FLAG.is_set():
                 sleep(1)
@@ -81,11 +82,11 @@ def copy_files(src_dir: str, dest_dir: str):
     try:
         if not os.path.exists(dest_dir):
             os.makedirs(dest_dir)
-            logging.debug(f"Created backup dir at: {dest_dir}")
+            manager_logger.debug(f"Created backup dir at: {dest_dir}")
         else:
-            logging.debug(f"Backup dir {dest_dir} already exists")
+            manager_logger.debug(f"Backup dir {dest_dir} already exists")
     except OSError as exc:
-        logging.error(f"Error creating backup dir: {dest_dir}: {exc}")
+        manager_logger.error(f"Error creating backup dir: {dest_dir}: {exc}")
         raise exc
 
     try:
@@ -107,13 +108,13 @@ def copy_files(src_dir: str, dest_dir: str):
                 try:
                     shutil.copy2(src_file, dest_file)
                 except Exception as e:
-                    logging.error(f"Failed to copy '{src_file}' to '{dest_file}': {e}")
+                    manager_logger.error(f"Failed to copy '{src_file}' to '{dest_file}': {e}")
 
     except Exception as exc:
-        logging.error(f"Couldn't copy src {src_dir} to dest {dest_dir}: {exc}")
+        manager_logger.error(f"Couldn't copy src {src_dir} to dest {dest_dir}: {exc}")
         raise exc
     
-    logging.debug("All files copied successfully.")
+    manager_logger.debug("All files copied successfully.")
 
 def periodic_backup(interval_sec: int, backup_dir: str, server_path: str) -> None:
     """
@@ -125,18 +126,58 @@ def periodic_backup(interval_sec: int, backup_dir: str, server_path: str) -> Non
     # TODO: Zip the backups for space efficiency
     while True and not STOP_THREADS_FLAG.is_set():
         try:
-            logging.info(f"Backing up server files to {backup_dir}")
+            manager_logger.info(f"Backing up server files to {backup_dir}")
             copy_files(src_dir=server_path, dest_dir=backup_dir)
         except Exception as exc:
-            logging.critical(f"Could not backup files to {backup_dir}: {exc}")
+            manager_logger.critical(f"Could not backup files to {backup_dir}: {exc}")
         
         # modular sleeps into seconds to check for the stop threads flag
-        logging.info("Running periodic wait on backup thread")
+        manager_logger.info("Running periodic wait on backup thread")
         for _ in range(interval_sec):
             if not STOP_THREADS_FLAG.is_set():
                 sleep(1)
             else:
                 break
+
+def configure_manager_log(filepath: str):
+    """
+    Custom log desired for the management portion needs a separate config,
+    don't want to be mixed with flask logging
+    """
+    global manager_logger
+    manager_logger = logging.getLogger('manager_logger')
+    manager_logger.setLevel(logging.DEBUG)
+    # create a file handler for the manager log
+    manager_handler = logging.FileHandler(filepath)
+    manager_handler.setLevel(logging.DEBUG)
+    # create the formatter
+    manager_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    manager_handler.setFormatter(manager_formatter)
+    # add handler to logger
+    manager_logger.addHandler(manager_handler)
+
+def configure_flask_log(filepath: str):
+    """
+    Necessary steps to separate the flask application from writing to the root log,
+    and to our own desired UI based log
+    """
+    # Get the Flask logger
+    flask_logger = logging.getLogger(flask_log)
+
+    # Remove the default Flask (werkzeug) handlers
+    flask_logger.handlers = []
+
+    # Create a file handler for the Flask logger
+    flask_handler = logging.FileHandler(filepath)
+    flask_handler.setLevel(logging.DEBUG)
+
+    # Create a formatter and set it for the Flask handler
+    flask_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    flask_handler.setFormatter(flask_formatter)
+
+    # Add the handler to the Flask logger
+    flask_logger.addHandler(flask_handler)
+
 
 @app.route('/')
 def index():
@@ -178,8 +219,9 @@ def main():
     global server_config
     server_config = ServerManagerConfig(config_name)
 
-    # initialize the log
-    logging.basicConfig(filename=server_config.manager_log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    # call the function to configure the custom logs to have separate files
+    configure_manager_log(server_config.manager_log_path)
+    configure_flask_log(server_config.web_log_path)
 
     # Initialize the server
     global server_process
@@ -193,12 +235,14 @@ def main():
         backup_task = threading.Thread(target=periodic_backup, args=(server_config.backup_interval_sec, server_config.backup_path, server_config.server_path))
         backup_task.start()
 
-        flask_task = threading.Thread(target=app.run())
+        flask_task = threading.Thread(target=app.run(host='0.0.0.0', port=5000))
         flask_task.start()
 
         server_process.wait()
+        STOP_THREADS_FLAG.set()
+        server_process.terminate()
     except KeyboardInterrupt:
-        logging.critical("program exited, killing server process and sub processes")
+        manager_logger.critical("program exited, killing server process and sub processes")
         STOP_THREADS_FLAG.set()
         server_process.terminate()
 
